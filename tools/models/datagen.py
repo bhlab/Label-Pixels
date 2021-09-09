@@ -5,6 +5,7 @@ import numpy as np
 import tensorflow.keras as keras
 import gdal
 from tensorflow.keras.utils import to_categorical
+import tensorflow as tf
 
 
 class DataGenerator(keras.utils.Sequence):
@@ -60,10 +61,18 @@ class DataGenerator(keras.utils.Sequence):
             _image = _image.transpose(1, 2, 0)
             _label = np.array(_label.ReadAsArray()) / rs_label
             _label = np.expand_dims(_label, axis=-1)
-            # print(_label.shape)
+
+            augmentation = True  # augmentation equal to False if not required
+            if augmentation:
+                _image_flip = tf.image.flip_left_right(_image)
+                _label_flip = tf.image.flip_left_right(_label)
+                if n_classes > 1:
+                    _label_flip = to_categorical(_label_flip, num_classes=n_classes)
+                X.append(_image_flip)
+                y.append(_label_flip)
+
             if n_classes > 1:
                 _label = to_categorical(_label, num_classes=n_classes)
-                # print(_label.shape)
             X.append(_image)
             y.append(_label)
         X = np.array(X)
