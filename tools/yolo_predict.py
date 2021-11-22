@@ -187,13 +187,13 @@ def draw_boxes(filename, v_boxes, v_labels, v_scores):
 
 
 # load yolov3 model
-# model = load_model('./models/yolo_model.h5')
-model = load_model('./models/md_v4_1_0.pb')
+model = load_model('./models/yolo_model.h5')
+# model = load_model('./models/md_v4_1_0.pb')
 # define the expected input shape for the model
 input_w, input_h = 416, 416
 # define our new photo
 # photo_filename = '../data/zebra.jpg'
-photo_filename = '../data/cricket_team.jpg'
+photo_filename = '../data/shivam_birthday.jpg'
 # photo_filename = '../data/tiger.jpg'
 # load and prepare image
 image, image_w, image_h = load_image_pixels(photo_filename, (input_w, input_h))
