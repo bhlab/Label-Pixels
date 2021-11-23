@@ -13,8 +13,8 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 import requests
-from PIL import Image, ImageFile, ImageFont, ImageDraw
-
+from PIL import Image, ImageFile, ImageFont, ImageDraw, ImageOps
+from tqdm import tqdm
 from data_management.annotations import annotation_constants
 from data_management.annotations.annotation_constants import (
     detector_bbox_category_id_to_name)  # here id is int
@@ -240,6 +240,64 @@ def crop_image(detections, image, confidence_threshold=0.8, expansion=0):
             top = min(top,im_height-1); bottom = min(bottom,im_height-1)
 
             ret_images.append(image.crop((left, top, right, bottom)))
+
+        # ...if this detection is above threshold
+
+    # ...for each detection
+
+    return ret_images
+
+
+def square_crop_image(detections, img, confidence_threshold=0.8):
+    """
+    Crops detections above *confidence_threshold* from the PIL image *image*,
+    returning a list of PIL images.
+
+    *detections* should be a list of dictionaries with keys 'conf' and 'bbox';
+    see bbox format description below.  Normalized, [x,y,w,h], upper-left-origin.
+
+    *expansion* specifies a number of pixels to include on each side of the box.
+    """
+
+    ret_images = []
+    square_crop = True
+
+    for detection in detections:
+
+        score = float(detection['conf'])
+
+        if score >= confidence_threshold:
+            bbox_norm = detection['bbox']
+            img_w, img_h = img.size
+            xmin = int(bbox_norm[0] * img_w)
+            ymin = int(bbox_norm[1] * img_h)
+            box_w = int(bbox_norm[2] * img_w)
+            box_h = int(bbox_norm[3] * img_h)
+
+            if square_crop:
+                # expand box width or height to be square, but limit to img size
+                box_size = max(box_w, box_h)
+                xmin = max(0, min(
+                    xmin - int((box_size - box_w) / 2),
+                    img_w - box_w))
+                ymin = max(0, min(
+                    ymin - int((box_size - box_h) / 2),
+                    img_h - box_h))
+                box_w = min(img_w, box_size)
+                box_h = min(img_h, box_size)
+
+            if box_w == 0 or box_h == 0:
+                tqdm.write(f'Skipping size-0 crop (w={box_w}, h={box_h}) at {save}')
+                return False
+
+            # Image.crop() takes box=[left, upper, right, lower]
+            crop = img.crop(box=[xmin, ymin, xmin + box_w, ymin + box_h])
+
+            if square_crop and (box_w != box_h):
+                # pad to square using 0s
+                crop = ImageOps.pad(crop, size=(box_size, box_size), color=0)
+
+            ret_images.append(crop)
 
         # ...if this detection is above threshold
 

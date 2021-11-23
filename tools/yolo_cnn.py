@@ -15,6 +15,12 @@ from models.ct_utils import truncate_float
 import visualization.visualization_utils as viz_utils
 
 import tensorflow as tf
+from tensorflow.keras.models import load_model
+# from tensorflow.keras.applications.resnet50 import preprocess_input
+from tensorflow.keras.applications.xception import preprocess_input  # as preprocess_input_xception
+from skimage.transform import resize
+import matplotlib.pyplot as plt
+
 
 print('TensorFlow version:', tf.__version__)
 print('Is GPU available? tf.test.is_gpu_available:', tf.test.is_gpu_available())
@@ -94,7 +100,7 @@ class TFDetector:
         """Loads model from model_path and starts a tf.Session with this graph. Obtains
         input and output tensor handles."""
         detection_graph = TFDetector.__load_model(model_path)
-        self.tf_session = tf.Session(graph=detection_graph)
+        self.tf_session = tf.compat.v1.Session(graph=detection_graph)
 
         self.image_tensor = detection_graph.get_tensor_by_name('image_tensor:0')
         self.box_tensor = detection_graph.get_tensor_by_name('detection_boxes:0')
@@ -150,8 +156,8 @@ class TFDetector:
         print('TFDetector: Loading graph...')
         detection_graph = tf.Graph()
         with detection_graph.as_default():
-            od_graph_def = tf.GraphDef()
-            with tf.gfile.GFile(model_path, 'rb') as fid:
+            od_graph_def = tf.compat.v1.GraphDef()
+            with tf.compat.v2.io.gfile.GFile(model_path, 'rb') as fid:
                 serialized_graph = fid.read()
                 od_graph_def.ParseFromString(serialized_graph)
                 tf.import_graph_def(od_graph_def, name='')
@@ -225,9 +231,9 @@ class TFDetector:
 # %% Main function
 
 
-def load_and_run_detector(model_file, image_file_names, output_dir,
+def load_and_run_detector(model_file, image_file_names, output_dir, cnn_model,
                           render_confidence_threshold=TFDetector.DEFAULT_RENDERING_CONFIDENCE_THRESHOLD,
-                          crop_images=False):
+                          crop_images=False, sort_data=False):
     """Load and run detector on target images, and visualize the results."""
     if len(image_file_names) == 0:
         print('Warning: no files available')
@@ -309,12 +315,65 @@ def load_and_run_detector(model_file, image_file_names, output_dir,
 
             result = tf_detector.generate_detections_one_image(image, im_file)
             detection_results.append(result)
-
             elapsed = time.time() - start_time
             time_infer.append(elapsed)
 
         except Exception as e:
             print('An error occurred while running the detector on image {}. Exception: {}'.format(im_file, e))
+            continue
+
+        images_cropped = viz_utils.square_crop_image(result['detections'], image)
+        model = load_model(cnn_model)
+        predictions =[]
+        for image in images_cropped:
+            _img = np.array(image)
+            _img = resize(_img, (224, 224))
+            fig, ax = plt.subplots(figsize=(9, 9))
+            img = ax.imshow(_img)
+            plt.show()
+            # _img = image.img_to_array(_img)
+            _img = np.expand_dims(_img, axis=0)
+            _img = preprocess_input(_img)
+            pred = model.predict(_img)
+            print(pred[0])
+            print(len(pred))
+            final_label = np.argmax(pred)
+            predictions.append(final_label)
+        print(predictions)
+
+        # Sort data
+        try:
+            # print(result)
+            if sort_data:
+                if len(result['detections']) == 0:
+                    print("Blank: ", im_file)
+                else:
+                    classes = []
+                    for detect in result['detections']:
+                        if detect['conf'] >= render_confidence_threshold:  # sorting threshold
+                            classes.append(detect['category'])
+                    if len(classes) == 0:
+                        print("Blank: ", im_file)
+                    elif len(classes) >= 1:
+                        if "3" in classes and "2" not in classes and "1" not in classes:  # Vehicle
+                            print("Vehicle: ", im_file)
+                        elif "2" in classes and "3" not in classes and "1" not in classes:  # Human
+                            print("Human: ", im_file)
+                        elif "2" in classes and "3" in classes and "1" not in classes:  # Human and Vehicle
+                            print("Human and Vehicle: ", im_file)
+                        elif "1" in classes and "2" not in classes and "3" not in classes:  # Animal
+                            print("Animal: ", im_file)
+                            images_cropped = viz_utils.square_crop_image(result['detections'], image)
+                            for image in images_cropped:
+                                print(image.shape)
+                        elif "1" in classes and "2" in classes and "3" not in classes:  # Animal and Human
+                            print("Animal and Human: ", im_file)
+                        elif "1" in classes and "3" in classes and "2" not in classes:  # Animal and Vehicle
+                            print("Animal and Vehicle: ", im_file)
+                        elif "1" in classes and "2" in classes and "3" in classes:  # Animal, Vehicle and Human
+                            print("Animal, Vehicle and Human: ", im_file)
+        except Exception as e:
+            print('Sorting data failed')
             continue
 
         try:
@@ -391,6 +450,15 @@ def main():
         action="store_true",
         help=('If set, produces separate output images for each crop, '
               'rather than adding bounding boxes to the original image'))
+    parser.add_argument(
+        '--sort_data',
+        default=False,
+        action="store_true",
+        help='Sort data: Create folder for each class and sort automatically')
+    parser.add_argument(
+        '--cnn_model',
+        help='Path to .pb TensorFlow detector model file')
+
     if len(sys.argv[1:]) == 0:
         parser.print_help()
         parser.exit()
@@ -419,8 +487,9 @@ def main():
     load_and_run_detector(model_file=args.detector_file,
                           image_file_names=image_file_names,
                           output_dir=args.output_dir,
+                          cnn_model=args.cnn_model,
                           render_confidence_threshold=args.threshold,
-                          crop_images=args.crop)
+                          crop_images=args.crop, sort_data=args.sort_data)
 
 
 if __name__ == '__main__':
