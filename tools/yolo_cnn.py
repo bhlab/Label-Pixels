@@ -19,7 +19,7 @@ from tensorflow.keras.models import load_model
 # from tensorflow.keras.applications.resnet50 import preprocess_input
 from tensorflow.keras.applications.xception import preprocess_input  # as preprocess_input_xception
 from skimage.transform import resize
-import matplotlib.pyplot as plt
+import shutil
 
 
 print('TensorFlow version:', tf.__version__)
@@ -241,6 +241,7 @@ def load_and_run_detector(model_file, image_file_names, output_dir, cnn_model,
 
     start_time = time.time()
     tf_detector = TFDetector(model_file)
+    tf_classifier = load_model(cnn_model)
     elapsed = time.time() - start_time
     print('Loaded model in {}'.format(humanfriendly.format_timespan(elapsed)))
 
@@ -291,7 +292,44 @@ def load_and_run_detector(model_file, image_file_names, output_dir, cnn_model,
         fn = os.path.join(output_dir, fn)
         return fn
 
+    def cnn_predictions(images_cropped):
+        predictions = []
+        for _image in images_cropped:
+            _img = resize(_image, (224, 224))
+            # _img = tf.image.resize(_image, (224, 224))
+            _img = np.expand_dims(_img, axis=0)
+            _img = preprocess_input(_img)
+            pred = tf_classifier.predict(_img)
+            final_label = np.argmax(pred)
+            predictions.append(final_label)
+
+        return predictions
+
+    def create_dir_l1(out_dir, folder, file_name):
+        path = os.path.join(out_dir, folder)
+        if not os.path.exists(path):
+            os.mkdir(path)
+        path = os.path.join(path, file_name)
+
+        return path
+
+    def create_dir_l2(out_dir, species_index, file_name):
+        path_l1 = os.path.join(out_dir, "animal")
+        if not os.path.exists(path_l1):
+            os.mkdir(path_l1)
+        species_list = ["barking _deer", "chital",  "chousingha", "common_palm_civet", "gaur",
+                        "hare", "indian_porcupine", "jungle_cat", "langur", "leopard", "nilgai",
+                        "ratel", "sambar", "sloth_bear", "small_indian_civet", "tiger",
+                        "wild_boar", "wild_dog"]
+        path_l2 = os.path.join(path_l1, species_list[species_index])
+        if not os.path.exists(path_l2):
+            os.mkdir(path_l2)
+        path_l2 = os.path.join(path_l2, file_name)
+
+        return path_l2
+
     for im_file in tqdm(image_file_names):
+        dir_, file_name = os.path.split(im_file)
 
         try:
             start_time = time.time()
@@ -322,61 +360,56 @@ def load_and_run_detector(model_file, image_file_names, output_dir, cnn_model,
             print('An error occurred while running the detector on image {}. Exception: {}'.format(im_file, e))
             continue
 
-        images_cropped = viz_utils.square_crop_image(result['detections'], image)
-        model = load_model(cnn_model)
-        predictions =[]
-        for image in images_cropped:
-            _img = np.array(image)
-            _img = resize(_img, (224, 224))
-            fig, ax = plt.subplots(figsize=(9, 9))
-            img = ax.imshow(_img)
-            plt.show()
-            # _img = image.img_to_array(_img)
-            _img = np.expand_dims(_img, axis=0)
-            _img = preprocess_input(_img)
-            pred = model.predict(_img)
-            print(pred[0])
-            print(len(pred))
-            final_label = np.argmax(pred)
-            predictions.append(final_label)
-        print(predictions)
 
         # Sort data
         try:
             # print(result)
             if sort_data:
                 if len(result['detections']) == 0:
-                    print("Blank: ", im_file)
+                    copy_dir = create_dir_l1(output_dir, 'blank', file_name)
+                    shutil.copyfile(im_file, copy_dir)
+
                 else:
                     classes = []
                     for detect in result['detections']:
                         if detect['conf'] >= render_confidence_threshold:  # sorting threshold
                             classes.append(detect['category'])
                     if len(classes) == 0:
-                        print("Blank: ", im_file)
+                        copy_dir = create_dir_l1(output_dir, 'blank', file_name)
+                        shutil.copyfile(im_file, copy_dir)
                     elif len(classes) >= 1:
                         if "3" in classes and "2" not in classes and "1" not in classes:  # Vehicle
-                            print("Vehicle: ", im_file)
+                            copy_dir = create_dir_l1(output_dir, 'vehicle', file_name)
+                            shutil.copyfile(im_file, copy_dir)
                         elif "2" in classes and "3" not in classes and "1" not in classes:  # Human
-                            print("Human: ", im_file)
+                            copy_dir = create_dir_l1(output_dir, 'human', file_name)
+                            shutil.copyfile(im_file, copy_dir)
                         elif "2" in classes and "3" in classes and "1" not in classes:  # Human and Vehicle
-                            print("Human and Vehicle: ", im_file)
+                            copy_dir = create_dir_l1(output_dir, 'human_vehicle', file_name)
+                            shutil.copyfile(im_file, copy_dir)
                         elif "1" in classes and "2" not in classes and "3" not in classes:  # Animal
-                            print("Animal: ", im_file)
-                            images_cropped = viz_utils.square_crop_image(result['detections'], image)
-                            for image in images_cropped:
-                                print(image.shape)
+                            images_cropped = viz_utils.square_crop_image(result['detections'], im_file)
+                            detections = cnn_predictions(images_cropped)
+                            detections = np.unique(np.array(detections))
+                            print("unique classes: ", detections)
+                            for cls in detections:
+                                copy_dir = create_dir_l2(output_dir, cls, file_name)
+                                shutil.copyfile(im_file, copy_dir)
                         elif "1" in classes and "2" in classes and "3" not in classes:  # Animal and Human
-                            print("Animal and Human: ", im_file)
+                            copy_dir = create_dir_l1(output_dir, 'animal_human', file_name)
+                            shutil.copyfile(im_file, copy_dir)
                         elif "1" in classes and "3" in classes and "2" not in classes:  # Animal and Vehicle
-                            print("Animal and Vehicle: ", im_file)
+                            copy_dir = create_dir_l1(output_dir, 'animal_vehicle', file_name)
+                            shutil.copyfile(im_file, copy_dir)
                         elif "1" in classes and "2" in classes and "3" in classes:  # Animal, Vehicle and Human
-                            print("Animal, Vehicle and Human: ", im_file)
+                            copy_dir = create_dir_l1(output_dir, 'animal_human_vehicle', file_name)
+                            shutil.copyfile(im_file, copy_dir)
         except Exception as e:
-            print('Sorting data failed')
+            print('Sorting data failed', e)
             continue
 
-        try:
+        """
+                try:
             if crop_images:
 
                 images_cropped = viz_utils.crop_image(result['detections'], image)
@@ -397,6 +430,8 @@ def load_and_run_detector(model_file, image_file_names, output_dir, cnn_model,
         except Exception as e:
             print('Visualizing results on the image {} failed. Exception: {}'.format(im_file, e))
             continue
+        """
+
 
     # ...for each image
 

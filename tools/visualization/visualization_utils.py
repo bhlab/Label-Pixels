@@ -13,6 +13,8 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 import requests
+import tensorflow as tf
+from tensorflow.keras.preprocessing import image as tf_image
 from PIL import Image, ImageFile, ImageFont, ImageDraw, ImageOps
 from tqdm import tqdm
 from data_management.annotations import annotation_constants
@@ -248,7 +250,7 @@ def crop_image(detections, image, confidence_threshold=0.8, expansion=0):
     return ret_images
 
 
-def square_crop_image(detections, img, confidence_threshold=0.8):
+def square_crop_image(detections, img_dir, confidence_threshold=0.8):
     """
     Crops detections above *confidence_threshold* from the PIL image *image*,
     returning a list of PIL images.
@@ -261,6 +263,8 @@ def square_crop_image(detections, img, confidence_threshold=0.8):
 
     ret_images = []
     square_crop = True
+    img = tf_image.load_img(img_dir)
+    img = tf_image.img_to_array(img)
 
     for detection in detections:
 
@@ -268,7 +272,7 @@ def square_crop_image(detections, img, confidence_threshold=0.8):
 
         if score >= confidence_threshold:
             bbox_norm = detection['bbox']
-            img_w, img_h = img.size
+            img_h, img_w, _ = img.shape
             xmin = int(bbox_norm[0] * img_w)
             ymin = int(bbox_norm[1] * img_h)
             box_w = int(bbox_norm[2] * img_w)
@@ -286,18 +290,35 @@ def square_crop_image(detections, img, confidence_threshold=0.8):
                 box_w = min(img_w, box_size)
                 box_h = min(img_h, box_size)
 
-            if box_w == 0 or box_h == 0:
-                tqdm.write(f'Skipping size-0 crop (w={box_w}, h={box_h}) at {save}')
-                return False
+            xmax = xmin + box_w
+            ymax = ymin + box_h
+
+            # if box_w == 0 or box_h == 0:
+            #     tqdm.write(f'Skipping size-0 crop (w={box_w}, h={box_h}) at {save}')
+            #     return False
 
             # Image.crop() takes box=[left, upper, right, lower]
-            crop = img.crop(box=[xmin, ymin, xmin + box_w, ymin + box_h])
+            # crop = img.crop(box=[xmin, ymin, xmin + box_w, ymin + box_h])
 
-            if square_crop and (box_w != box_h):
-                # pad to square using 0s
-                crop = ImageOps.pad(crop, size=(box_size, box_size), color=0)
+            crop_test = img[ymin:ymax, xmin:xmax, :]
 
-            ret_images.append(crop)
+            # crop_test = crop_test/255
+            # fig, ax = plt.subplots(figsize=(9, 9))
+            # img_test = img/255
+            # img_vis = ax.imshow(crop_test)
+            # Create a Rectangle patch
+            # import matplotlib.patches as patches
+            # rect = patches.Rectangle((xmin, ymin), box_w, box_h, linewidth=1, edgecolor='r', facecolor='none')
+            # # Add the patch to the Axes
+            # ax.add_patch(rect)
+            # plt.show()
+            # print(crop_test.shape)
+            # print(np.max(crop_test), np.mean(crop_test), np.min(crop_test))
+            # if square_crop and (box_w != box_h):
+            #     # pad to square using 0s
+            #     crop = ImageOps.pad(crop, size=(box_size, box_size), color=0)
+
+            ret_images.append(crop_test)
 
         # ...if this detection is above threshold
 
